@@ -64,9 +64,9 @@ fun TelemetryScreen(vm: TelemetryViewModel) {
         }
 
         // Stroke summary
-        if (state.lastStrokeAvgWatts > 0f) {
+        if (state.strokeCount > 0) {
             Text(
-                "Last stroke avg: %.0f W".format(state.lastStrokeAvgWatts),
+                "Strokes: ${state.strokeCount}   Last: %.0f W".format(state.lastStrokeAvgWatts),
                 color = Color.Gray,
                 fontSize = 18.sp,
                 modifier = Modifier.align(Alignment.CenterHorizontally)

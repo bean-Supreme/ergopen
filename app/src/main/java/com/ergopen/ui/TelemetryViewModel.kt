@@ -18,6 +18,7 @@ data class TelemetryState(
     val handleMm: Int = 0,
     val revolutions: Float = 0f,
     val lastStrokeAvgWatts: Float = 0f,
+    val strokeCount: Int = 0,
     val sequence: Int = 0,
     val connected: Boolean = false,
     val error: String? = null,
@@ -54,7 +55,8 @@ class TelemetryViewModel(app: Application) : AndroidViewModel(app) {
                         sequence = packet.sequence
                     )
                     is RowerPacket.Stroke -> _state.value = _state.value.copy(
-                        lastStrokeAvgWatts = packet.averageWatts
+                        lastStrokeAvgWatts = packet.averageWatts,
+                        strokeCount = packet.sequence + 1
                     )
                     is RowerPacket.Unknown -> _state.value = _state.value.copy(
                         connected = true,

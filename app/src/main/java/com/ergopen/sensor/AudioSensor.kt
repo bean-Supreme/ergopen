@@ -32,6 +32,16 @@ object AudioSensor {
     // RMS below this = noise, output zeros
     private const val NOISE_THRESHOLD = 500f
 
+    // Stroke detection — valley-based, works at any cadence
+    // A stroke fires at the bottom of each recovery dip: when frequency was falling
+    // for at least 2 consecutive windows and then starts rising again.
+    // Much more robust than a fixed ratio at high cadence where the flywheel
+    // barely decelerates between strokes.
+    private const val MIN_DRIVE_HZ     = 160f  // peak must exceed this to count as a real drive
+    private const val MIN_DROP_RATIO   = 0.06f // 6% drop from peak required (filters flat noise)
+    private const val NOISE_MARGIN     = 0.03f // freq within 3% of prev = "not falling" (jitter guard)
+    private const val MIN_DRIVE_WINDOWS = 5    // ≥5 rising windows (~500ms) required — filters blips
+
     // Autocorrelation pitch detector — finds fundamental frequency of complex waveforms
     // Returns frequency in Hz, or 0 if no clear pitch found
     private fun detectFrequency(buf: ShortArray, count: Int): Float {
@@ -92,6 +102,20 @@ object AudioSensor {
                 val windowBuf = ShortArray(windowSize)
                 var smoothedFreq = 0f              // exponential moving average
                 val alpha = 0.3f                   // smoothing factor (lower = smoother)
+                var totalRevolutions = 0f          // accumulated flywheel revolutions
+
+                // Stroke detection state
+                var peakFreq = 0f                  // highest freq seen during current drive phase
+                var peakWattsSum = 0f
+                var peakWindows = 0
+                var driveRevs = 0f
+                var recoveryRevs = 0f
+                var prevRecoveryRevs = 0f
+                var driveStartSeq = 0
+                var strokeCount = 0
+                var inRecovery = false             // true while freq is declining post-peak
+                var consecutiveFalling = 0         // windows in a row freq has been declining
+                var prevFreqHz = 0f                // smoothedFreq from previous window
 
                 while (true) {
                     val read = recorder.read(buf, 0, buf.size)
@@ -129,18 +153,73 @@ object AudioSensor {
                         val rps = freqHz / PULSES_PER_REV
                         val rpm = rps * 60f
                         val watts = if (active && freqHz > 0f) POWER_K * rps * rps * rps else 0f
+                        totalRevolutions += rps * (windowSize.toFloat() / SAMPLE_RATE)
 
                         Log.d(TAG, "freq=${freqHz.toInt()}Hz rpm=${rpm.toInt()} watts=${watts.toInt()} rms=${rms.toInt()} active=$active")
+
+                        val revsThisWindow = rps * (windowSize.toFloat() / SAMPLE_RATE)
 
                         emit(RowerPacket.Instantaneous(
                             timestamp = System.currentTimeMillis(),
                             rpm = rpm,
-                            revolutions = totalFrames / SAMPLE_RATE.toFloat(),
+                            revolutions = totalRevolutions,
                             watts = watts.coerceAtLeast(0f),
                             handleMm = freqHz.toInt(), // raw Hz for calibration
-                            sequence = sequence++
+                            sequence = sequence
                         ))
 
+                        // Stroke detection — valley-based
+                        // Fire at the bottom of each recovery dip (falling→rising transition).
+                        val rising = freqHz >= prevFreqHz * (1f - NOISE_MARGIN)
+                        if (active) {
+                            if (rising) {
+                                // Freq is rising (or flat within noise margin)
+                                if (inRecovery && consecutiveFalling >= 2) {
+                                    // Turning point: was falling ≥2 windows, now rising → valley
+                                    val drop = if (peakFreq > 0f) (peakFreq - prevFreqHz) / peakFreq else 0f
+                                    if (peakFreq >= MIN_DRIVE_HZ && drop >= MIN_DROP_RATIO && peakWindows >= MIN_DRIVE_WINDOWS) {
+                                        val avgWatts = if (peakWindows > 0) peakWattsSum / peakWindows else 0f
+                                        Log.i(TAG, "Stroke #${strokeCount+1}: peak=${peakFreq.toInt()}Hz valley=${prevFreqHz.toInt()}Hz drop=${"%.0f".format(drop*100)}% driveRevs=${"%.2f".format(driveRevs)} avgWatts=${avgWatts.toInt()}")
+                                        emit(RowerPacket.Stroke(
+                                            timestamp = System.currentTimeMillis(),
+                                            startPosition = 0,
+                                            endPosition = 0,
+                                            driveRevolutions = driveRevs,
+                                            recoveryRevolutions = prevRecoveryRevs,
+                                            averageWatts = avgWatts,
+                                            lastPacketRecoveryEndIndex = driveStartSeq,
+                                            driveEndIndex = sequence,
+                                            sequence = strokeCount++
+                                        ))
+                                        prevRecoveryRevs = recoveryRevs
+                                        recoveryRevs = 0f
+                                        driveRevs = 0f
+                                        peakFreq = 0f
+                                        peakWattsSum = 0f
+                                        peakWindows = 0
+                                        driveStartSeq = sequence
+                                    }
+                                }
+                                inRecovery = false
+                                consecutiveFalling = 0
+                                if (freqHz > peakFreq) peakFreq = freqHz
+                                driveRevs += revsThisWindow
+                                peakWattsSum += watts
+                                peakWindows++
+                            } else {
+                                // Freq is falling — in recovery
+                                inRecovery = true
+                                consecutiveFalling++
+                                recoveryRevs += revsThisWindow
+                            }
+                        } else {
+                            // Signal lost — decay state
+                            if (peakFreq > 0f) peakFreq *= 0.9f
+                            if (inRecovery) consecutiveFalling++
+                        }
+                        prevFreqHz = freqHz
+
+                        sequence++
                         windowSamples = 0
                     }
                 }
