@@ -1,4 +1,4 @@
-# hydropen
+# ergopen
 
 Custom Android launcher and control interface for the rowing machine rowing machine tablet.
 
