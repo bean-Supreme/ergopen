@@ -1,194 +1,167 @@
-# Hydrow Hardware Research Log
-
-This document tracks all discoveries about the Hydrow rowing machine hardware interface.
-
-Unknowns should be documented rather than guessed.
+# Hardware Research Log
 
 ---
 
-# Confirmed Facts
+## Device
 
-| Item            | Status  |
-| --------------- | ------- |
-| Tablet OS       | Android |
-| APK sideloading | Works   |
-| Custom launcher | Works   |
-| Root required   | No      |
-
----
-
-# Hardware Interfaces
-
-## 3.5mm Jack
-
-Assumption:
-
-The rowing machine control board sends sensor data through the 3.5mm jack.
-
-Possible formats:
-
-* analog telemetry
-* pulse encoding
-* serial-over-audio
-* frequency encoding
-
-Status: **unknown**
+| Item            | Value                        |
+|-----------------|------------------------------|
+| Model           | `foenix_h`                   |
+| SoC             | MediaTek (`alps`)            |
+| Android         | 10 (SDK 29)                  |
+| Resolution      | 1920x1080 landscape          |
+| MAC             | 34:E1:D1:C0:C8:5D            |
+| ADB             | port 5555, over Wi-Fi/LAN    |
 
 ---
 
-# Investigation Plan
+## Confirmed Facts
 
-## Step 1 — Raw Audio Capture
-
-Capture raw PCM input.
-
-Record:
-
-* sample rate
-* amplitude range
-* waveform shape
-
-Tools to build:
-
-```
-SignalInspectorActivity
-```
-
-Displays:
-
-* waveform
-* frequency spectrum
-* amplitude histogram
+| Item                  | Status    |
+|-----------------------|-----------|
+| Tablet OS             | Android 10|
+| APK sideloading       | Works     |
+| Custom launcher       | Works     |
+| Root required         | No        |
+| ADB over Wi-Fi        | Works     |
+| Sensor via 3.5mm jack | **WRONG** — it's UART |
 
 ---
 
-## Step 2 — Signal Characterization
+## Hardware Interface — CONFIRMED: UART Serial
 
-Questions to answer:
+The rowing machine control board communicates over a **hardware UART**, not audio.
 
-1. Is the signal continuous or burst-based?
-2. Does it contain repeating frames?
-3. Does frequency change with rowing activity?
-4. Does amplitude correlate with stroke force?
+### Device node
+
+```
+/dev/ttyMT1  ->  /dev/ttyS1   (symlink)
+crw-rw----  system  system
+```
+
+`ttyMT1` = MediaTek hardware UART 1.
+
+### Connection parameters
+
+| Parameter | Value    |
+|-----------|----------|
+| Baud rate | 921600   |
+| Parity    | none     |
+| Format    | ASCII, space-delimited, `\n\r` terminated |
+
+### Device path search order (from stock APK source)
+
+1. `/dev/ttyACM0`
+2. `/dev/ttyMT1`  ← present on this device
+3. `/dev/ttyUSB0`
 
 ---
 
-## Step 3 — Stroke Detection
+## Protocol — CONFIRMED (reverse-engineered from com.truerowing.crew APK)
 
-If signal corresponds to rowing motion:
+### Commands (tablet → brake controller)
 
-Possible pattern:
+| Command              | Response prefix | Description                      |
+|----------------------|-----------------|----------------------------------|
+| `Cm 1\n\r`           | `Rm`            | Enable continuous streaming mode |
+| `Cm 0\n\r`           | `Rm`            | Disable continuous streaming mode|
+| `Cl <level>\n\r`     | `Rl <level>`    | Set resistance level             |
+| `Ql\n\r`             | `Rl`            | Query current resistance level   |
+| `Ch\n\r`             | `Rh`            | Report health                    |
+| `Cs\n\r`             | `Rs`            | Report serial number             |
+| `Cv\n\r`             | `Rv`            | Report firmware version          |
+| `Cr\n\r`             | `Rr`            | Soft reboot                      |
+| `Qc\n\r`             | `Rc`            | Query resistance curve params    |
+| `Cc <...>\n\r`       | `Rc`            | Update resistance curve params   |
+| `T1\n\r`             | `t1`            | Start canned (test) data         |
+| `T0\n\r`             | `t0`            | Stop canned data                 |
+
+### Streaming packets (received when Cm 1 active)
+
+#### Instantaneous — `Di` (sent at high frequency)
 
 ```
-stroke start
-drive phase
-recovery phase
+Di <rpm5> <revolutions100> <watts10> <handleMM> <sequence>
 ```
 
-Look for periodicity.
+| Field            | Scale | Unit        |
+|------------------|-------|-------------|
+| rpm5             | ÷ 5   | RPM         |
+| revolutions100   | ÷ 100 | revolutions |
+| watts10          | ÷ 10  | watts       |
+| handleMM         | raw   | millimeters |
+| sequence         | raw   | counter     |
+
+Also: `Di2` (V2 variant, same format)
+
+#### Stroke summary — `Ds` (once per stroke)
+
+```
+Ds <startPos> <endPos> <driveRev10> <recoveryRev10> <avgWatts10> <lastRecoveryEndIdx> <driveEndIdx> <sequence>
+```
+
+| Field                      | Scale | Unit        |
+|----------------------------|-------|-------------|
+| startPos / endPos          | raw   | mm          |
+| driveStrokeRevolution10    | ÷ 10  | revolutions |
+| recoveryStrokeRevolution10 | ÷ 10  | revolutions |
+| averageWatts10             | ÷ 10  | watts       |
+
+Also: `Ds2` (V2 variant, same format)
+
+#### Other response prefixes
+
+| Prefix | Meaning               |
+|--------|-----------------------|
+| `Rl`   | Resistance level      |
+| `Rv`   | Firmware version      |
+| `Rs`   | Serial number         |
+| `Rh`   | Health status         |
+| `Sr`   | Reboot complete       |
+| `!!`   | Error                 |
+| `e0`   | Error response        |
+| `Re`   | Error conditions      |
+
+### Resistance safe range
+
+```
+50 ≤ level ≤ 200
+```
+
+Never send values outside this range.
 
 ---
 
-## Step 4 — Hardware Control Path
+## Permission Notes
 
-Resistance control may occur through:
+`/dev/ttyS1` is `crw-rw---- system system`. Our sideloaded app needs system UID.
 
-1. Android service
-2. JNI library
-3. serial device
-4. Bluetooth
-5. USB interface
-
-Investigations:
-
-```
-adb shell service list
-```
-
-Look for vendor services.
+Options (in order of preference for dev):
+1. `adb shell chmod 666 /dev/ttyS1` — try first, costs nothing
+2. `android:sharedUserId="android.uid.system"` + sign with AOSP platform test key
+3. Push APK to `/system/priv-app/` via adb after remounting system partition
 
 ---
 
-# Hydrow App Reverse Engineering
+## Installed Packages of Interest
 
-Extract Hydrow APK.
-
-Tools:
-
-* jadx
-* apktool
-
-Search for keywords:
-
-```
-drag
-resistance
-erg
-damper
-```
-
-Look for:
-
-```
-setDrag()
-setResistance()
-```
+| Package                          | Location                 | Notes                    |
+|----------------------------------|--------------------------|--------------------------|
+| `com.truerowing.crew`            | `/data/app/...`          | Main app, runs as system |
+| `com.truerowing.hydrowlauncher`  | `/system/priv-app/...`   | Stock launcher           |
+| `com.dsi.ant.*`                  | system                   | ANT+ — heart rate only   |
+| `com.mediatek.engineermode`      | system                   | Engineering menu present |
 
 ---
 
-# Signals to Record
+## Experiment Log
 
-During rowing tests capture:
+### 2026-03-12
 
-```
-idle signal
-light rowing
-heavy rowing
-rapid strokes
-```
+**TEST:** ADB connection and device enumeration
+**RESULT:** Connected via Wi-Fi (10.0.1.18), later ethernet (10.0.1.20). Pulled both APKs, decompiled with jadx.
 
-Store recordings in:
+**TEST:** Reverse-engineered `com.truerowing.crew` APK
+**RESULT:** Found `CrewSerialManager.kt` — full UART serial protocol recovered. 3.5mm audio assumption was incorrect.
 
-```
-docs/signal_samples/
-```
-
----
-
-# Important Unknowns
-
-| Unknown                | Priority |
-| ---------------------- | -------- |
-| Sensor signal encoding | High     |
-| Drag control interface | High     |
-| Telemetry frame format | Medium   |
-
----
-
-# Experiment Log
-
-Agents and developers should record experiments here.
-
-Example format:
-
-```
-DATE:
-TEST:
-RESULT:
-INTERPRETATION:
-```
-
----
-
-# Example
-
-DATE: 2026-03-10
-
-TEST:
-Recorded 30 seconds of audio from jack while rowing.
-
-RESULT:
-Signal shows repeating peaks at stroke rate.
-
-INTERPRETATION:
-Likely amplitude or pulse encoding.
+**NEXT:** Build hydropen app, attempt `chmod 666 /dev/ttyS1` for dev access, then connect and stream live telemetry.

@@ -32,3 +32,6 @@ google-services.json
 
 # Android Profiling
 *.hprof
+
+# APKs and decompiled source — third-party binaries, do not distribute
+apks/

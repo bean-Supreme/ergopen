@@ -1,6 +1,6 @@
 # Signal Inspector
 
-The Signal Inspector is a diagnostic tool used to analyze the signal coming from the Hydrow rowing machine via the **3.5mm audio jack**.
+The Signal Inspector is a diagnostic tool used to analyze the signal coming from the rowing machine via the **3.5mm audio jack**.
 
 This tool is critical for reverse engineering the telemetry format.
 
@@ -15,7 +15,7 @@ It allows developers and AI agents to:
 
 # Purpose
 
-The Hydrow control board likely sends telemetry through the audio input channel.
+The rowing machine control board likely sends telemetry through the audio input channel.
 
 Possible encodings include:
 
@@ -89,7 +89,7 @@ Example screen:
 
 ```
 ----------------------------------
-Hydrow Signal Inspector
+ergopen Signal Inspector
 
 Waveform
 ██████████░░░░░░██████░░░░

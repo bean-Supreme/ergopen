@@ -1,10 +1,10 @@
 # hydropen
 
-Custom Android launcher and control interface for the Hydrow rowing machine tablet.
+Custom Android launcher and control interface for the rowing machine rowing machine tablet.
 
-This project enables direct access to rowing machine telemetry and hardware controls by running a sideloaded Android app on the Hydrow tablet.
+This project enables direct access to rowing machine telemetry and hardware controls by running a sideloaded Android app on the rowing machine tablet.
 
-The application is designed to replace (or augment) the stock Hydrow launcher and expose machine controls such as drag/resistance while also providing access to raw sensor data for custom analytics.
+The application is designed to replace (or augment) the stock rowing machine launcher and expose machine controls such as drag/resistance while also providing access to raw sensor data for custom analytics.
 
 ---
 
@@ -14,7 +14,7 @@ Early-stage hardware exploration.
 
 Confirmed so far:
 
-* Apps can be **sideloaded** onto the Hydrow tablet
+* Apps can be **sideloaded** onto the rowing machine tablet
 * A **custom launcher can run successfully**
 * The environment behaves similarly to a normal Android tablet
 
@@ -33,7 +33,7 @@ Primary goals:
 * Decode rowing metrics from the incoming signal
 * Provide UI controls for drag/resistance
 * Provide access to Android system controls (volume, brightness, etc.)
-* Run as a custom launcher on the Hydrow tablet
+* Run as a custom launcher on the rowing machine tablet
 
 Secondary goals:
 
@@ -126,14 +126,14 @@ These assumptions must be verified experimentally.
 Requirements:
 
 * Android Studio
-* ADB access to the Hydrow tablet
+* ADB access to the rowing machine tablet
 * Ability to sideload APKs
 
 Example install workflow:
 
 ```
 adb connect <tablet-ip>
-adb install hydrow-control.apk
+adb install ergopen.apk
 ```
 
 ---
@@ -141,7 +141,7 @@ adb install hydrow-control.apk
 # Repository Structure
 
 ```
-hydrow-control-app
+ergopen
 │
 ├── app
 │   ├── sensor
@@ -239,4 +239,4 @@ TBD
 
 # Disclaimer
 
-This project is an independent experiment and is not affiliated with or endorsed by Hydrow.
+This project is an independent experiment and is not affiliated with or endorsed by rowing machine.

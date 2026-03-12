@@ -8,7 +8,7 @@ Agents should read this file before making changes.
 
 # Project Summary
 
-This project implements a **custom Android application for the Hydrow rowing machine tablet**.
+This project implements a **custom Android application for rowing machine tablets**.
 
 The app will:
 
@@ -73,7 +73,7 @@ Launcher integration
 
 Current assumptions:
 
-* Hydrow tablet runs Android
+* Rowing machine tablet runs Android
 * Apps can be sideloaded
 * Launcher replacement works
 * Rowing machine sensor data enters via **3.5mm jack**
