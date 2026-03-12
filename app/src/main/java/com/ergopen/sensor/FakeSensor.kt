@@ -1,4 +1,4 @@
-package com.hydropen.sensor
+package com.ergopen.sensor
 
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow

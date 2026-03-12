@@ -1,4 +1,4 @@
-package com.hydropen.ui
+package com.ergopen.ui
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
@@ -49,8 +49,18 @@ fun TelemetryScreen(vm: TelemetryViewModel) {
         ) {
             MetricBox("WATTS", "%.0f".format(state.watts), Color(0xFFFFD700))
             MetricBox("RPM", "%.1f".format(state.rpm), Color.White)
-            MetricBox("HANDLE", "${state.handleMm}mm", Color(0xFF00BFFF))
+            MetricBox("HZ", "${state.handleMm}", Color(0xFF00BFFF))
             MetricBox("REVS", "%.2f".format(state.revolutions), Color(0xFF90EE90))
+        }
+
+        // Raw signal monitor
+        state.signalRaw?.let { signal ->
+            Text(
+                signal,
+                color = Color(0xFF00FF88),
+                fontSize = 14.sp,
+                modifier = Modifier.align(Alignment.CenterHorizontally)
+            )
         }
 
         // Stroke summary

@@ -6,7 +6,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 # Project Summary
 
-**hydropen** is a custom Android launcher and control interface for the rowing machine rowing machine tablet. It reads sensor telemetry from the rowing machine hardware, decodes rowing metrics, and provides UI controls for drag/resistance and Android system settings.
+**ergopen** is a custom Android launcher and control interface for the rowing machine rowing machine tablet. It reads sensor telemetry from the rowing machine hardware, decodes rowing metrics, and provides UI controls for drag/resistance and Android system settings.
 
 Current status: early-stage hardware exploration. Signal encoding and hardware control interface are still unknown.
 

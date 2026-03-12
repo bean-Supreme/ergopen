@@ -4,11 +4,11 @@ plugins {
 }
 
 android {
-    namespace 'com.hydropen'
+    namespace 'com.ergopen'
     compileSdk 34
 
     defaultConfig {
-        applicationId "com.hydropen"
+        applicationId "com.ergopen"
         minSdk 26
         targetSdk 29
         versionCode 1

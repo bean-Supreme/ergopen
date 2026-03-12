@@ -1,10 +1,11 @@
-package com.hydropen.ui
+package com.ergopen.ui
 
-import androidx.lifecycle.ViewModel
+import android.app.Application
+import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
-import com.hydropen.sensor.FakeSensor
-import com.hydropen.sensor.ErgSerial
-import com.hydropen.sensor.RowerPacket
+import com.ergopen.sensor.AudioSensor
+import com.ergopen.sensor.FakeSensor
+import com.ergopen.sensor.RowerPacket
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -19,10 +20,11 @@ data class TelemetryState(
     val lastStrokeAvgWatts: Float = 0f,
     val sequence: Int = 0,
     val connected: Boolean = false,
-    val error: String? = null
+    val error: String? = null,
+    val signalRaw: String? = null
 )
 
-class TelemetryViewModel : ViewModel() {
+class TelemetryViewModel(app: Application) : AndroidViewModel(app) {
 
     private val _state = MutableStateFlow(TelemetryState())
     val state: StateFlow<TelemetryState> = _state
@@ -33,7 +35,9 @@ class TelemetryViewModel : ViewModel() {
         job?.cancel()
         _state.value = TelemetryState(connected = false)
 
-        val source = if (fake) FakeSensor.packets() else ErgSerial.packets()
+        val outputDir = getApplication<android.app.Application>().getExternalFilesDir(null)
+            ?: getApplication<android.app.Application>().filesDir
+        val source = if (fake) FakeSensor.packets() else AudioSensor.record(outputDir)
 
         job = viewModelScope.launch {
             source.catch { e ->
@@ -51,6 +55,11 @@ class TelemetryViewModel : ViewModel() {
                     )
                     is RowerPacket.Stroke -> _state.value = _state.value.copy(
                         lastStrokeAvgWatts = packet.averageWatts
+                    )
+                    is RowerPacket.Unknown -> _state.value = _state.value.copy(
+                        connected = true,
+                        error = null,
+                        signalRaw = packet.raw
                     )
                     else -> Unit
                 }

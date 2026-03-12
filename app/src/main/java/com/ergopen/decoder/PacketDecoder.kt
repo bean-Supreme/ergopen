@@ -1,6 +1,6 @@
-package com.hydropen.decoder
+package com.ergopen.decoder
 
-import com.hydropen.sensor.RowerPacket
+import com.ergopen.sensor.RowerPacket
 
 object PacketDecoder {
 

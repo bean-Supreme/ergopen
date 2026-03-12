@@ -154,6 +154,50 @@ Options (in order of preference for dev):
 
 ---
 
+## Audio Signal Analysis
+
+Although the stock app uses UART, the 3.5mm cable also carries an **analog sensor signal** readable via the tablet's audio input (no root required).
+
+### Signal characteristics
+
+| Property          | Value                                      |
+|-------------------|--------------------------------------------|
+| Type              | Sinusoidal analog (NOT FSK-encoded serial) |
+| Frequency range   | ~85–320 Hz during active rowing            |
+| At rest           | RMS < ~170 (noise floor)                   |
+| Active threshold  | RMS > ~500                                 |
+| Sample rate used  | 44100 Hz, 16-bit mono                      |
+
+### Frequency → RPM
+
+Signal frequency tracks flywheel rotation speed. Relationship:
+
+```
+rps = freqHz / PULSES_PER_REV
+rpm = rps * 60
+watts = POWER_K * rps³
+```
+
+Current calibration constants (approximate, needs tuning):
+- `PULSES_PER_REV = 60` — feels close (~1.9 RPS in steady rowing)
+- `POWER_K = 4.0` — uncalibrated
+
+### Waveform notes
+
+- Non-sinusoidal: strong 2nd harmonic causes autocorrelation to sometimes lock on 2× the fundamental
+- Spurious spikes occur when autocorrelation best-lag hits the search boundary
+- Mitigated with: upper frequency limit of 600 Hz, boundary rejection, exponential smoothing (α=0.3)
+
+### Permission status
+
+```
+/dev/ttyS1  crw-rw----  system system
+```
+
+`chmod 666` via `adb shell` fails (shell user, not root). UART path blocked without system signing or root.
+
+---
+
 ## Experiment Log
 
 ### 2026-03-12
@@ -162,6 +206,15 @@ Options (in order of preference for dev):
 **RESULT:** Connected via Wi-Fi (10.0.1.18), later ethernet (10.0.1.20). Pulled both APKs, decompiled with jadx.
 
 **TEST:** Reverse-engineered `com.truerowing.crew` APK
-**RESULT:** Found `CrewSerialManager.kt` — full UART serial protocol recovered. 3.5mm audio assumption was incorrect.
+**RESULT:** Found `CrewSerialManager.kt` — full UART serial protocol recovered. 3.5mm audio assumption was initially incorrect — but audio input DOES carry usable analog signal.
 
-**NEXT:** Build hydropen app, attempt `chmod 666 /dev/ttyS1` for dev access, then connect and stream live telemetry.
+**TEST:** Sideload with `android:sharedUserId="android.uid.system"`
+**RESULT:** `INSTALL_FAILED_SHARED_USER_INCOMPATIBLE` — requires platform signing key. System partition is read-only, `chmod` on ttyS1 denied. UART path blocked.
+
+**TEST:** Audio capture via `AudioRecord` (RECORD_AUDIO permission only)
+**RESULT:** Clear sinusoidal signal received. Frequency tracks flywheel speed. Noise floor ~170 RMS, active signal up to ~8000 RMS. Signal present on both L and R channels (standard TRS, not TRRS).
+
+**TEST:** Autocorrelation pitch detection (100ms windows, 50–600 Hz range)
+**RESULT:** Stable frequency tracking. Some harmonic ambiguity (2× flipping) mitigated with EMA smoothing. RPM display feels accurate at ~1–2 RPS during steady rowing.
+
+**NEXT:** Calibrate `PULSES_PER_REV` with controlled spin test. Implement proper revolution counter and stroke detection from frequency envelope.

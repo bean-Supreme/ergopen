@@ -1,7 +1,7 @@
-package com.hydropen.sensor
+package com.ergopen.sensor
 
-import android_serialport_api.SerialPort
-import com.hydropen.decoder.PacketDecoder
+import android.serialport.SerialPort
+import com.ergopen.decoder.PacketDecoder
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
@@ -64,7 +64,7 @@ object ErgSerial {
         for (path in DEVICE_PATHS) {
             val file = File(path)
             if (file.canRead() && file.canWrite()) {
-                return SerialPort(file, BAUD_RATE, 0)
+                return SerialPort.newBuilder(file, BAUD_RATE).build()
             }
         }
         error("Could not open serial port at any of: $DEVICE_PATHS")

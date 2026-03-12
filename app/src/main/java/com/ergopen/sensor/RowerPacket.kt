@@ -1,4 +1,4 @@
-package com.hydropen.sensor
+package com.ergopen.sensor
 
 sealed class RowerPacket {
 

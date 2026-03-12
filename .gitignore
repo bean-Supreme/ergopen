@@ -35,3 +35,10 @@ google-services.json
 
 # APKs and decompiled source — third-party binaries, do not distribute
 apks/
+
+# Signal captures — raw PCM recordings, too large for git
+signal_captures/
+
+# Gradle wrapper jar — generated, not source
+gradle/wrapper/gradle-wrapper.jar
+gradlew.bat
