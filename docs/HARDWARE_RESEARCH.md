@@ -300,18 +300,19 @@ Stroke #10: peak=231Hz  valley=126Hz  drop=45%  driveRevs=4.07  avgWatts=61
 Current `PULSES_PER_REV=60` means `rpm == freqHz` numerically (4.13 RPS at peak).
 Recommended next value remains **48** — see calibration analysis above.
 
-**TABLET I/O CLARIFICATION — InnoComm Foenix iCOM1019 spec sheet (2026-03-14):**
+**TABLET I/O CLARIFICATION (2026-03-14):**
 
-The Foenix tablet has **two separate 3.5mm jacks**:
+Physical inspection (see `docs/IMG_0723.jpeg`) confirms **one 3.5mm jack** on this machine,
+not two. The InnoComm Foenix iCOM1019 spec sheet describes a different variant with separate
+serial and audio jacks — that does not apply here.
 
-| Jack | Purpose |
-|------|---------|
-| 3.5mm TRS (serial) | UART Tx, Rx, GND — used by stock app for control board comms |
-| 3.5mm 4-pole (audio) | Standard audio I/O — source of our AudioRecord analog signal |
+The single 3.5mm TRS jack carries **both** signals on the same connector:
+- UART serial (Tx, Rx, GND) — used by stock app for control board comms
+- Analog flywheel signal — readable via Android `AudioRecord` API
 
-The rowing machine cable likely connects to the serial jack for UART, while the flywheel
-analog signal arrives separately via the audio jack. Both are on the same physical cable
-bundle running to the control board.
+How both coexist on a 3-conductor TRS connector is not yet confirmed. Possibilities:
+the analog signal rides on a conductor also used for UART (DC-coupled), or the control
+board multiplexes them. Either way, both are demonstrably present on the same cable.
 
 **SENSOR TYPE HYPOTHESIS (2026-03-14):**
 
