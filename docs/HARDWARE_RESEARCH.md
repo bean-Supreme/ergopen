@@ -151,8 +151,11 @@ shows only network/connectivity events — no rowing telemetry logged at the def
 | `su` binary | **Absent** | Not present on device |
 | Logcat sniffing from crew app | **No data** | Telemetry not logged at default level |
 | IPC from crew app | **No data** | No exported services or content providers |
-| **MTK-SU exploit** | **Untried** | Known to work on some MT8167/Android 10 builds |
-| Fastboot + Magisk | **IN PROGRESS** | OEM bootloader unlocked via Developer Options (2026-03-14) |
+| MTK-SU exploit (mtk-easy-su v2.2.1) | **FAILED** | "Critical init step 1" — firmware build Sept 2024 is patched |
+| Fastboot + Magisk | **BLOCKED** | Can't pull boot image: `fastboot fetch` unsupported, ADB pull denied, recovery shell unavailable |
+| mtkclient BROM mode | **BLOCKED** | Preloader intercepts volume button; cannot enter BROM mode |
+| MTK Engineer Mode | **BLOCKED** | `com.mediatek.engineermode` requires uid=0001 (system) |
+| TrueRowing IPC | **BLOCKED** | No exported activities, services, receivers, or content providers |
 
 Build fingerprint: `alps/foenix_h/foenix_h:10/QP1A.190711.020/1725505377:user/release-keys`
 
@@ -271,4 +274,65 @@ See Permission Notes section for full investigation summary.
 **RESULT:** Fastboot + Magisk path is now viable. Device booted into fastboot mode successfully.
 **NOTE:** Fastboot only works over USB — ethernet is unavailable in fastboot mode. Must use micro-USB cable connected to a laptop to proceed.
 
-**NEXT:** Connect via USB, confirm with `fastboot devices` + `fastboot getvar unlocked`, then flash Magisk-patched boot image to gain root. Root will allow `chmod 666 /dev/ttyS1` (or persistent init.d equivalent), unblocking direct UART access and `PULSES_PER_REV` calibration.
+**ROOT ATTEMPT — all paths exhausted (2026-03-14):**
+
+| Approach | Result |
+|---|---|
+| `fastboot fetch boot_b` | Unsupported on Android 10 |
+| `adb pull /dev/block/by-name/boot_b` | Permission denied (uid=2000) |
+| Stock recovery ADB shell | Sideload-only, no shell |
+| mtk-easy-su v2.2.1 | Failed: "critical init step 1" — firmware patched (build Sept 2024) |
+| mtkclient BROM mode | Could not get device into BROM; preloader intercepts volume button |
+| MTK Engineer Mode | Requires uid=0001 (system) |
+| TrueRowing IPC | No exported activities, services, receivers, or content providers |
+
+Root is currently blocked. Telemetry via audio path is the active track.
+
+**TELEMETRY SESSION (2026-03-14):**
+
+Stroke detection working. Sample strokes from logcat:
+
+```
+Stroke #9:  peak=248Hz  valley=152Hz  drop=39%  driveRevs=6.08  avgWatts=192
+Stroke #10: peak=231Hz  valley=126Hz  drop=45%  driveRevs=4.07  avgWatts=61
+```
+
+Current `PULSES_PER_REV=60` means `rpm == freqHz` numerically (4.13 RPS at peak).
+Recommended next value remains **48** — see calibration analysis above.
+
+**TABLET I/O CLARIFICATION — InnoComm Foenix iCOM1019 spec sheet (2026-03-14):**
+
+The Foenix tablet has **two separate 3.5mm jacks**:
+
+| Jack | Purpose |
+|------|---------|
+| 3.5mm TRS (serial) | UART Tx, Rx, GND — used by stock app for control board comms |
+| 3.5mm 4-pole (audio) | Standard audio I/O — source of our AudioRecord analog signal |
+
+The rowing machine cable likely connects to the serial jack for UART, while the flywheel
+analog signal arrives separately via the audio jack. Both are on the same physical cable
+bundle running to the control board.
+
+**SENSOR TYPE HYPOTHESIS (2026-03-14):**
+
+The clean sinusoidal waveform (no harmonics, no digital edges) is consistent with a
+**passive inductive pickup coil** — the same design used by Concept2, which mounts a coil
+around a metal pin near the flywheel and detects magnets embedded in the rim. This type
+produces a smooth sine wave as each magnet passes, amplitude proportional to speed.
+
+This rules out digital Hall effect sensors (which produce square pulses) and brushless
+motor back-EMF (which shows multiple phases). Implication: `PULSES_PER_REV` equals the
+number of discrete magnets on the flywheel rim.
+
+Concept2 uses 3 magnets but has a large air-resistance fan wheel. The Hydrow has a
+smaller electromagnetic resistance wheel — smaller diameter means higher RPM for the same
+rowing effort, which could produce similar frequencies with more magnets. Cannot infer
+count from frequency range alone without knowing wheel diameter.
+
+**NOTE on magnet count research:** Web search found no Hydrow/TrueRowing-specific data.
+Open Rowing Monitor profiles show 1–4 PPR for simple reed/Hall sensors — not applicable here.
+No teardown documentation exists publicly for this machine.
+
+**NEXT:** Open flywheel cover panel to physically count magnets on flywheel rim and
+identify sensor type (coil vs Hall). Measure flywheel diameter if possible. This will
+definitively set `PULSES_PER_REV` and unblock accurate RPM and watt calculations.
