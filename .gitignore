@@ -42,3 +42,11 @@ signal_captures/
 # Gradle wrapper jar — generated, not source
 gradle/wrapper/gradle-wrapper.jar
 gradlew.bat
+
+# Python
+__pycache__/
+*.pyc
+
+# Node
+frontend/node_modules/
+frontend/dist/
