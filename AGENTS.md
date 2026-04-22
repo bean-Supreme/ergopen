@@ -6,225 +6,143 @@ Agents should read this file before making changes.
 
 ---
 
-# Project Summary
+## Project Summary
 
-This project implements a **custom Android application for rowing machine tablets**.
+**ergopen** is a local web app that reads the Hydrow rowing machine's flywheel sensor
+signal via a laptop's 3.5mm audio jack and displays real-time rowing metrics
+(split, SPM, watts, RPM).
 
-The app will:
+The Hydrow control board sends an analog sinusoidal signal on the 3.5mm cable
+(alongside UART serial). We read it via the laptop mic input — no root, no Android
+involvement.
 
-1. Run as a **custom launcher**
-2. Read **sensor telemetry from the rowing machine hardware**
-3. Provide UI controls for **drag/resistance**
-4. Provide UI controls for **Android system settings** (volume, brightness, etc.)
-
-The device supports **APK sideloading**, and a custom launcher has already been successfully installed.
-
-Root access is **not required** and should not be assumed.
+The original Android-launcher approach is archived under `archive/android/` and
+must not be modified. See `docs/HARDWARE_RESEARCH.md` for the pivot rationale.
 
 ---
 
-# Key Architectural Principle
+## Stack
 
-The project is divided into **five major subsystems**.
+| Layer    | Technology                                         |
+|----------|----------------------------------------------------|
+| Backend  | Python, FastAPI, sounddevice, numpy                |
+| Frontend | Vite, React, TypeScript, Tailwind v4, recharts     |
+| Comms    | WebSocket at `ws://localhost:8000/stream`, ~20 fps |
 
-Agents should maintain this separation.
+---
+
+## Repository Structure
 
 ```
-sensor      -> hardware signal capture
-decoder     -> telemetry decoding
-analytics   -> rowing metrics
-hardware    -> machine control commands
-ui          -> user interface
-```
+server/              FastAPI backend
+  main.py            app + WebSocket broadcast loop
+  capture.py         AudioCapture (live mic or .pcm replay)
+  analysis.py        pitch detection, FFT, stroke detection, split
+  models.py          Pydantic models (SignalFrame is the main broadcast type)
+  types.ts           TypeScript mirror of models.py — keep in sync manually
 
-Each subsystem must remain **loosely coupled**.
+frontend/src/
+  pages/             Dashboard.tsx (/), Debug.tsx (/debug)
+  components/        WaveformCanvas, FftChart, ...
+  lib/ergopen/       useStream.ts (WebSocket hook), types.ts
 
-Communication between subsystems should occur through clearly defined interfaces.
-
----
-
-# Development Priorities
-
-Agents should focus on tasks in this order:
-
-### Priority 1
-
-Sensor capture from the **3.5mm audio jack**
-
-### Priority 2
-
-Signal inspection and decoding tools
-
-### Priority 3
-
-Drag/resistance control
-
-### Priority 4
-
-User interface
-
-### Priority 5
-
-Launcher integration
-
----
-
-# Hardware Assumptions
-
-Current assumptions:
-
-* Rowing machine tablet runs Android
-* Apps can be sideloaded
-* Launcher replacement works
-* Rowing machine sensor data enters via **3.5mm jack**
-* Sensor signal likely appears as **audio waveform input**
-
-These assumptions must **not be treated as guaranteed facts**.
-
-Agents should prefer **instrumentation and diagnostics** over speculation.
-
----
-
-# Agent Guidelines
-
-## Prefer Instrumentation
-
-When hardware behavior is unknown, create tools to inspect it.
-
-Examples:
-
-* raw signal visualizer
-* logging tools
-* packet inspectors
-* telemetry dump utilities
-
-Avoid hardcoding interpretations until data confirms them.
-
----
-
-# Avoid Tight Coupling
-
-The decoder must **not depend on UI code**.
-
-Correct dependency flow:
-
-```
-sensor
-  ↓
-decoder
-  ↓
-analytics
-  ↓
-ui
+inspector/           Standalone matplotlib inspector (no server needed)
+signal_captures/     Raw recordings, 16-bit mono PCM at 44100 Hz
+tools/               Offline calibration utilities
+docs/                Hardware research + signal inspector docs
+archive/android/     Archived Android launcher — do not modify
+apks/                Decompiled stock APKs — research reference, gitignored
 ```
 
 ---
 
-# Safe Hardware Control
+## Running
 
-The app may control rowing machine resistance.
+```bash
+# Backend — run from repo root, not from inside server/
+uvicorn server.main:app --reload --port 8000
 
-Agents must enforce safety limits.
+# Frontend
+cd frontend && npm run dev
 
-Example:
-
+# Open http://localhost:5173 for the dashboard, /debug for raw signal inspection
 ```
-drag level ∈ [50, 200]
-```
-
-Never send unbounded values to hardware interfaces.
 
 ---
 
-# Code Style
+## Agent Guidelines
 
-Preferred language: **Kotlin**
+### Prefer instrumentation
 
-Architecture:
+When signal behavior is unknown, build inspection tools before assuming. The
+`inspector/` tool and `/debug` page already exist for this — extend them rather
+than speculating from code alone. Avoid hardcoding interpretations until data
+confirms them.
 
-* MVVM or modular service architecture
-* Jetpack Compose for UI
+### Keep the type mirror in sync
 
-Avoid large monolithic classes.
+`server/models.py`, `server/types.ts`, and `frontend/src/lib/ergopen/types.ts`
+are manual mirrors. When `SignalFrame` or any shared model changes, update all
+three — out-of-sync types will silently break the WebSocket contract.
+
+### Preserve the pure/stateful split
+
+`analyze()` in `server/analysis.py` is pure — it takes samples and returns a dict.
+`StrokeDetector` is stateful and lives in `_State` in `server/main.py`. Don't
+merge them; don't introduce module-level state in `analysis.py`.
+
+### Loose coupling
+
+Dependency direction:
+
+```
+capture → analysis → broadcast → frontend
+```
+
+Frontend must not reach into server internals. Analysis code must not depend on
+transport (WebSocket, HTTP). Capture must not know about analysis.
+
+### Safe hardware control
+
+If a future path exposes the rowing machine's drag/resistance (via root, a new
+interface, or user-supplied hardware), the drag level MUST be clamped to
+`[50, 200]`. Never send unbounded values to hardware interfaces. The UART
+command set is documented in `docs/HARDWARE_RESEARCH.md`.
+
+### Logging
+
+Hardware-adjacent code should log enough context to reverse-engineer behavior
+later — at minimum `timestamp`, `source`, and the raw values being interpreted.
+Don't remove diagnostic logging to make output "cleaner".
+
+### Testing hardware-dependent code
+
+Hardware is difficult to test automatically. Use `.pcm` replay (`inspector/inspector.py <file>`
+or `POST /replay`) to feed recorded signals through the pipeline. When adding
+new analysis behavior, capture a session that exercises it and keep it under
+`signal_captures/` (gitignored, but shareable).
 
 ---
 
-# Testing Strategy
+## Calibration Status
 
-Hardware is difficult to test automatically.
+Two physical constants gate the accuracy of every displayed metric:
 
-Agents should implement:
+| Constant          | Current value | Status                                            |
+|-------------------|---------------|---------------------------------------------------|
+| `PULSES_PER_REV`  | 48            | Best guess — needs physical magnet count          |
+| `POWER_K`         | 4.0           | Uncalibrated — needs known-load or UART reference |
 
-### Simulation layers
-
-Example:
-
-```
-FakeSensorSource
-MockTelemetry
-SimulatedStrokeStream
-```
-
-This allows development without the rowing machine.
+Changing either affects RPM, watts, and split proportionally. Treat them as
+hypotheses, not facts.
 
 ---
 
-# Logging Requirements
+## Things Agents Must NOT Do
 
-All hardware interaction must log:
-
-```
-timestamp
-source
-raw data
-decoded value
-```
-
-Logs are critical for reverse engineering.
-
----
-
-# Repository Structure
-
-```
-app/
-  sensor/
-  decoder/
-  analytics/
-  hardware/
-  system/
-  ui/
-
-docs/
-  hardware_research.md
-  signal_analysis.md
-
-tools/
-  signal_inspector/
-```
-
-Agents should keep code in the appropriate module.
-
----
-
-# Things Agents Must NOT Do
-
-Do not:
-
-* assume undocumented hardware protocols
-* remove diagnostic logging
-* merge hardware and UI logic
-* implement speculative decoding algorithms without data
-
----
-
-# When Hardware Behavior Is Unknown
-
-Agents should:
-
-1. Capture raw data
-2. Visualize signal
-3. Log samples
-4. Build decoding experiments
-
-Never skip step 1.
+- Assume undocumented hardware protocols
+- Remove diagnostic logging
+- Merge analysis and UI/transport logic
+- Implement speculative decoding algorithms without data
+- Modify anything under `archive/android/` — it is frozen research
+- Update one of the three type-mirror files without updating all three
