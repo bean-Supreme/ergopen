@@ -1,160 +1,79 @@
 # Signal Inspector
 
-The Signal Inspector is a diagnostic tool used to analyze the signal coming from the rowing machine via the **3.5mm audio jack**.
+Tools for inspecting the raw analog flywheel signal from the Hydrow rowing machine.
 
-This tool is critical for reverse engineering the telemetry format.
-
-It allows developers and AI agents to:
-
-* visualize the raw waveform
-* inspect amplitude levels
-* inspect frequency spectrum
-* record sample data for offline analysis
+Two interfaces exist — the standalone inspector for quick offline analysis, and the web debug dashboard for live inspection.
 
 ---
 
-# Purpose
+## Standalone inspector (`inspector/inspector.py`)
 
-The rowing machine control board likely sends telemetry through the audio input channel.
+Matplotlib-based tool. No server required. Works on recorded `.pcm` files or live mic input.
 
-Possible encodings include:
+```bash
+python inspector/inspector.py signal_captures/signal_XXXXX.pcm
+```
 
-* analog voltage level
-* pulse width modulation
-* frequency modulation
-* serial-over-audio
-
-The Signal Inspector allows us to determine which encoding is used.
+Shows:
+- Raw waveform (time domain)
+- FFT spectrum (50–600 Hz)
+- RMS and peak amplitude
+- Detected frequency (autocorrelation)
 
 ---
 
-# Features
+## Web debug dashboard (`/debug`)
 
-## Real-time waveform display
+Live inspection via the FastAPI + React app.
 
-Displays incoming PCM data in real time.
+```bash
+uvicorn server.main:app --reload --port 8000
+cd frontend && npm run dev
+# open http://localhost:5173/debug
+```
 
-Useful for identifying:
-
-* pulse patterns
-* stroke cycles
-* amplitude changes
+Shows:
+- Real-time waveform (canvas, last ~100ms)
+- Live FFT spectrum (50–600 Hz, recharts)
+- Digital readouts: RMS, freq, RPM, watts, PPR, active state
+- Capture start/stop and recording controls
 
 ---
 
-## FFT Spectrum
+## Recording format
 
-Displays frequency components of the signal.
+Files saved to `signal_captures/`:
 
-Useful for detecting:
+```
+filename:    signal_<unix_ms>.pcm
+encoding:    16-bit signed PCM, little-endian
+sample rate: 44100 Hz
+channels:    mono
+```
 
-* frequency encoded telemetry
-* carrier signals
-* modulated data
+Compatible with Audacity (raw import), numpy (`np.frombuffer(..., dtype=np.int16)`), and the replay endpoint (`POST /replay`).
 
 ---
 
-## Signal Statistics
+## Recommended capture scenarios
 
-Display:
-
-* min amplitude
-* max amplitude
-* RMS level
-
----
-
-## Recording
-
-Allow recording short sessions for later analysis.
-
-Recordings stored at:
-
-```
-/docs/signal_samples/
-```
-
-Recommended capture scenarios:
-
-1. idle machine
-2. light rowing
-3. heavy rowing
-4. fast stroke rate
+1. Machine idle (establishes noise floor)
+2. Light rowing, steady pace
+3. Hard rowing at high SPM
+4. Spin-down from peak to rest
 
 ---
 
-# UI Layout
+## Signal interpretation status
 
-Example screen:
-
-```
-----------------------------------
-ergopen Signal Inspector
-
-Waveform
-██████████░░░░░░██████░░░░
-
-Frequency Spectrum
-|    |  |    ||      | |
-
-Amplitude
-Min: -2100
-Max: 2300
-RMS: 840
-
-[Start] [Stop] [Record]
-----------------------------------
-```
-
----
-
-# Implementation Notes
-
-Android API used:
-
-```
-AudioRecord
-```
-
-Recommended configuration:
-
-```
-sampleRate: 44100
-encoding: PCM_16BIT
-channel: MONO
-buffer: 2048 samples
-```
-
----
-
-# Important
-
-The inspector must **never attempt to interpret the signal automatically**.
-
-Its purpose is to **observe and record raw data**, not decode it.
-
-Decoding belongs in the `decoder` module.
-
----
-
-# Output Data Format
-
-Recording files should be saved as:
-
-```
-.raw
-```
-
-Format:
-
-```
-16-bit PCM
-44100Hz
-mono
-```
-
-This format can be inspected with tools like:
-
-* Audacity
-* Python numpy
-* MATLAB
+| Property            | Status             | Value / Notes                                  |
+|---------------------|--------------------|------------------------------------------------|
+| Signal type         | Confirmed          | Inductive pickup coil, clean sinusoid          |
+| Frequency range     | Confirmed          | ~100–400 Hz during rowing                      |
+| Noise floor         | Confirmed          | RMS < 170                                      |
+| Active threshold    | Confirmed          | RMS > 500                                      |
+| Freq → RPM mapping  | Working            | `rps = freq / PPR`, `rpm = rps * 60`           |
+| Pulses per rev      | Unverified         | 48 (best candidate — needs physical inspection)|
+| Power constant K    | Uncalibrated       | `watts = 4.0 * rps³`                           |
+| Stroke detection    | Working            | Valley-to-rise transitions on EMA freq         |
+| Split calculation   | Working            | `500 * (2.8 / watts)^(1/3)` sec/500m          |

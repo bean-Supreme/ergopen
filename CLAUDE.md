@@ -1,96 +1,100 @@
 # CLAUDE.md
 
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+This file provides guidance to Claude Code when working with code in this repository.
 
 ---
 
-# Project Summary
+## Project Summary
 
-**ergopen** is a custom Android launcher and control interface for the rowing machine rowing machine tablet. It reads sensor telemetry from the rowing machine hardware, decodes rowing metrics, and provides UI controls for drag/resistance and Android system settings.
+**ergopen** is a local web app that reads the Hydrow rowing machine's flywheel sensor signal via a laptop's 3.5mm audio jack and displays real-time rowing metrics (split, SPM, watts, RPM).
 
-Current status: early-stage hardware exploration. Signal encoding and hardware control interface are still unknown.
+The Hydrow control board sends an analog sinusoidal signal on the 3.5mm cable (alongside UART serial). We read it via the laptop mic input — no root, no Android involvement.
 
 ---
 
-# Development Setup
+## Stack
 
-- Android Studio + ADB access to the rowing machine tablet
-- Root access is **not required** and should not be assumed
+| Layer    | Technology                                         |
+|----------|----------------------------------------------------|
+| Backend  | Python, FastAPI, sounddevice, numpy                |
+| Frontend | Vite, React, TypeScript, Tailwind v4, recharts     |
+| Comms    | WebSocket at `ws://localhost:8000/stream`, ~20 fps |
+
+---
+
+## Running
 
 ```bash
-adb connect <tablet-ip>
-adb install ergopen.apk
-```
+# Backend
+uvicorn server.main:app --reload --port 8000
 
-No build scripts exist yet — Android project scaffolding must be created as part of setup.
-
----
-
-# Architecture
-
-Five loosely-coupled subsystems with a strict dependency flow:
-
-```
-sensor      -> hardware signal capture (3.5mm audio jack, PCM 44100 Hz, 16-bit mono)
-  ↓
-decoder     -> telemetry decoding (encoding format TBD via experimentation)
-  ↓
-analytics   -> rowing metrics calculation
-  ↓
-ui          -> user interface (Jetpack Compose)
-
-hardware    -> machine control commands (separate subsystem, drag ∈ [50, 200])
-system      -> Android system controls (volume, brightness)
-```
-
-The decoder must **never** depend on ui. Hardware and system subsystems are independent of the data pipeline.
-
-Language: Kotlin. Architecture pattern: MVVM or modular service architecture.
-
----
-
-# Development Priorities
-
-1. Sensor capture from 3.5mm audio jack
-2. Signal inspection and decoding tools
-3. Drag/resistance control
-4. User interface
-5. Launcher integration
-
----
-
-# Key Rules
-
-**Instrumentation over speculation** — when hardware behavior is unknown, build tools to inspect it (signal visualizers, loggers, packet inspectors). Never hardcode interpretations before data confirms them.
-
-**Hardware logging** — all hardware interactions must log: timestamp, source, raw data, decoded value.
-
-**Safety** — hardware control must enforce bounds. Never send unbounded values to hardware interfaces.
-
-**Do not:**
-- Assume undocumented hardware protocols
-- Remove diagnostic logging
-- Merge hardware and UI logic
-- Implement speculative decoding algorithms without data
-
----
-
-# Testing Strategy
-
-Hardware cannot be tested automatically. Use simulation layers:
-
-```kotlin
-FakeSensorSource
-MockTelemetry
-SimulatedStrokeStream
+# Frontend
+cd frontend && npm run dev
 ```
 
 ---
 
-# Research Documentation
+## Architecture
+
+```
+server/main.py       FastAPI app + WebSocket broadcast loop
+server/capture.py    AudioCapture (live mic or .pcm replay)
+server/analysis.py   pitch detection, FFT, stroke detection, split formula
+server/models.py     Pydantic models — SignalFrame is the main broadcast type
+server/types.ts      TypeScript mirror of models.py — keep in sync manually
+
+frontend/src/pages/Dashboard.tsx        / — split (hero), SPM, watts, RPM
+frontend/src/pages/Debug.tsx            /debug — waveform, FFT, readouts, capture controls
+frontend/src/lib/ergopen/useStream.ts   WebSocket hook
+frontend/src/lib/ergopen/types.ts       TypeScript types (mirror of server/types.ts)
+
+inspector/inspector.py   Standalone matplotlib inspector (no server needed)
+signal_captures/*.pcm    Raw recordings, 16-bit mono PCM at 44100 Hz
+```
+
+---
+
+## Key constants (server/analysis.py)
+
+```python
+SAMPLE_RATE    = 44100
+NOISE_FLOOR    = 170
+ACTIVE_THRESH  = 500
+POWER_K        = 4.0   # uncalibrated: watts = K * rps³
+# PULSES_PER_REV = 48  # set in Config (default 48, best candidate — unverified)
+```
+
+Split formula: `500 * (2.8 / watts) ** (1/3)` seconds per 500m.
+
+---
+
+## Signal facts
+
+- Inductive pickup coil on flywheel, ~100–400 Hz during rowing
+- Clean sinusoid — no harmonics, no digital edges
+- Optimal mic gain: ~40% (avoids clipping, maintains SNR)
+- Autocorrelation pitch detection (ACF via FFT), EMA smoothed (α=0.15)
+- Stroke detection: frequency valley transitions → drive-start counts
+
+---
+
+## Key rules
+
+**Keep `server/types.ts` and `frontend/src/lib/ergopen/types.ts` in sync** — they are manual mirrors of `server/models.py`. When `SignalFrame` changes, update all three.
+
+**`analyze()` is pure** — `StrokeDetector` is stateful and lives in `_State` in `main.py`.
+
+**Instrumentation over speculation** — build inspection tools before assuming signal behavior.
+
+---
+
+## Research documentation
 
 - Hardware discoveries → `docs/HARDWARE_RESEARCH.md`
-- Signal Inspector spec → `docs/SIGNAL_INSPECTOR.md`
-- Signal recordings → `docs/signal_samples/`
+- Signal recordings → `signal_captures/`
 
-Before implementing any hardware feature: capture raw signal → inspect waveform → log observations → document experiments.
+---
+
+## Android archive
+
+Original Android launcher concept is in `archive/android/`. Superseded — do not modify.

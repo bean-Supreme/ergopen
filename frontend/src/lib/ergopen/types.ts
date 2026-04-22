@@ -49,6 +49,8 @@ export interface SignalFrame {
   is_active: boolean;
   is_recording: boolean;
   rec_duration: number;
+  spm: number | null;
+  split_sec: number | null;
 }
 
 // ── WebSocket message envelope ─────────────────────────────────────────────────

@@ -244,6 +244,36 @@ See Permission Notes section for full investigation summary.
 
 ---
 
+## Patent Research
+
+### US10471297B1 — "Rowing" (Hydrow Inc., granted 2019-11-12)
+
+System-level patent covering electromagnetic eddy-current brake resistance, cloud-synchronized
+multi-rower experiences, and variable resistance profiles that emulate on-water drag.
+
+**Relevant findings:**
+- Sensor types named: **Hall effect sensors, optical sensors** (both listed as candidates)
+- Measured quantity: angular velocity of the brake disk / flywheel
+- Controller module runs **Android** (Fig. 22 explicitly labels "Android Platform")
+- Resistance mechanism: eddy-current brake disk on shared axle with one-way clutch and flywheel
+- No PPR/CPR specified anywhere in the patent
+
+**Not useful for:** PPR/CPR, physical sensor placement, magnet count.
+
+### TWI750675B — "Rowing exercise machines having a configurable rowing feel" (Hydrow Inc., Taiwan, priority 2019-05-30)
+
+Control-system patent for real-time drag emulation. Core loop runs at ~240 Hz.
+
+**Relevant findings:**
+- References "a speed measurement device, such as an encoder (e.g., a shaft inclination encoder)"
+- US Digital customer spotlight confirms Hydrow uses a **US Digital HB6M hollow-bore optical
+  incremental encoder** (64–10,000 CPR, digital output, shaft-mounted)
+- 240 Hz control loop rate matches observed peak audio signal frequency — not coincidental
+
+**Not useful for:** PPR/CPR number, physical sensor wiring, 3.5mm jack signal origin.
+
+---
+
 ## Experiment Log
 
 ### 2026-03-12
@@ -264,6 +294,27 @@ See Permission Notes section for full investigation summary.
 **RESULT:** Stable frequency tracking. Some harmonic ambiguity (2× flipping) mitigated with EMA smoothing. RPM display feels accurate at ~1–2 RPS during steady rowing.
 
 **NEXT:** Calibrate `PULSES_PER_REV` with controlled spin test. Implement proper revolution counter and stroke detection from frequency envelope.
+
+### 2026-04-02
+
+**PATENT RESEARCH:**
+
+Reviewed US10471297B1 and TWI750675B (both Hydrow Inc.). Neither discloses PPR/CPR.
+US10471297B1 confirms Hall effect and optical sensors as candidate types; Android controller
+confirmed. TWI750675B + US Digital spotlight confirms HB6M optical encoder for the control
+board's own speed measurement. 240 Hz control loop rate matches peak audio frequency.
+
+**DRAG COIL CONFIRMATION:**
+
+`jacobmr/hydrown_drag_fix` teardown confirms: two 12Ω coils, 48V rail, MOSFET PWM at 25 kHz.
+Roughly linear mapping between PWM duty and Hydrow native drag level.
+
+**OPEN QUESTIONS UNCHANGED:**
+- PPR/CPR for the audio-path sinusoidal signal is unknown and not in any public source
+- Whether the audio sinusoid comes from a separate inductive sensor or processed encoder output
+- Physical magnet/pole count requires flywheel inspection
+
+---
 
 ### 2026-03-14
 
@@ -333,6 +384,39 @@ count from frequency range alone without knowing wheel diameter.
 **NOTE on magnet count research:** Web search found no Hydrow/TrueRowing-specific data.
 Open Rowing Monitor profiles show 1–4 PPR for simple reed/Hall sensors — not applicable here.
 No teardown documentation exists publicly for this machine.
+
+**SENSOR TYPE — UPDATED BY PATENT RESEARCH (2026-04-02):**
+
+Patent US10471297B1 (Hydrow Inc., filed 2018) names **Hall effect sensors and optical
+sensors** as the candidate types used for flywheel angular velocity measurement. This
+complicates the inductive pickup hypothesis:
+
+- Hall effect sensors produce square-wave pulses, not sinusoids — inconsistent with the
+  clean sinusoidal audio signal we observe.
+- Patent TWI750675B (Hydrow Inc., Taiwan, priority 2019) references a "shaft inclination
+  encoder" and a US Digital customer spotlight confirms Hydrow uses a **US Digital HB6M
+  hollow-bore optical incremental encoder** (64–10,000 CPR range, digital output).
+
+**Working hypothesis:** The control board has a high-resolution digital encoder (optical or
+Hall) for its own closed-loop drag control. The sinusoidal analog signal we read via
+`AudioRecord` is a **separate signal** — either a second sensor (inductive coil) or a
+filtered/processed output the control board places on the 3.5mm cable for the tablet's
+benefit. The two signals serve different purposes and may come from different physical
+sensors.
+
+Neither patent specifies PPR/CPR. No public source has this number.
+
+**DRAG COIL HARDWARE (confirmed via community teardown, 2026-04-02):**
+
+From `jacobmr/hydrown_drag_fix` (ESP32 replacement controller project):
+- Two electromagnetic coils, each ~12Ω
+- Powered from **+48V** rail
+- PWM-switched via MOSFETs at 25 kHz
+- Calibration note: controller 71% PWM ≈ Hydrow native drag 104 (roughly linear)
+
+This confirms the drag control path is coil-current-based (eddy-current brake), consistent
+with US10471297B1. The tablet sends `Cl <level>` over UART; the control board converts
+that to PWM duty cycle.
 
 **NEXT:** Open flywheel cover panel to physically count magnets on flywheel rim and
 identify sensor type (coil vs Hall). Measure flywheel diameter if possible. This will

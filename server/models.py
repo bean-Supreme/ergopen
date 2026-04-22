@@ -49,3 +49,5 @@ class SignalFrame(BaseModel):
     is_active: bool                # RMS above noise floor
     is_recording: bool
     rec_duration: float            # seconds recorded so far
+    spm: Optional[float]           # strokes per minute, null if insufficient data
+    split_sec: Optional[float]     # seconds per 500m, null if no power signal

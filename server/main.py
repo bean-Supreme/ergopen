@@ -29,7 +29,7 @@ from pathlib import Path
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 
-from .analysis import analyze, FFT_FREQS
+from .analysis import analyze, FFT_FREQS, StrokeDetector, split_from_watts
 from .capture import AudioCapture
 from .models import (
     Config, ConfigUpdate, DeviceInfo, RecordingInfo,
@@ -48,10 +48,11 @@ BROADCAST_HZ = 20   # frames per second
 # ── App state ──────────────────────────────────────────────────────────────────
 
 class _State:
-    capture:    AudioCapture
-    config:     Config
-    ema_freq:   float | None
-    clients:    list[WebSocket]
+    capture:          AudioCapture
+    config:           Config
+    ema_freq:         float | None
+    stroke_detector:  StrokeDetector
+    clients:          list[WebSocket]
 
 state = _State()
 
@@ -60,9 +61,10 @@ state = _State()
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    state.config   = Config()
-    state.ema_freq = None
-    state.clients  = []
+    state.config           = Config()
+    state.ema_freq         = None
+    state.stroke_detector  = StrokeDetector()
+    state.clients          = []
     state.capture  = AudioCapture(device=state.config.device,
                                   sample_rate=state.config.sample_rate)
     # Start the broadcast loop
@@ -98,6 +100,8 @@ async def _broadcast_loop() -> None:
 
         result = analyze(samples, state.config.ppr, state.ema_freq)
         state.ema_freq = result['ema_freq']
+        spm       = state.stroke_detector.update(result['freq'])
+        split_sec = split_from_watts(result['watts']) if result['watts'] else None
 
         frame = SignalFrame(
             ts           = time.time(),
@@ -111,6 +115,8 @@ async def _broadcast_loop() -> None:
             is_active    = result['is_active'],
             is_recording = state.capture.is_recording,
             rec_duration = state.capture.rec_duration,
+            spm          = spm,
+            split_sec    = split_sec,
         )
 
         payload = {'type': 'frame', 'data': frame.model_dump()}
